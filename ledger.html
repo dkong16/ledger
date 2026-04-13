@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Ledger"/>
+<meta name="theme-color" content="#0b0b18"/>
+<title>Ledger – Personal Finance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body,#root{height:100%;width:100%;}
+  body{font-family:'DM Sans',system-ui,sans-serif;background:#0b0b18;color:#e8e8f8;overflow:hidden;}
+  ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:#0b0b18;}::-webkit-scrollbar-thumb{background:#2d2d4e;border-radius:3px;}
+  input::placeholder{color:#44446688;}
+  select option{background:#1a1a2e;}
+  input,select,button{font-family:'DM Sans',system-ui,sans-serif;}
+  /* iOS safe areas */
+  #root{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script type="text/babel">
+const { useState, useEffect, useMemo } = React;
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+const uid = () => Math.random().toString(36).slice(2,10);
+const fmt = n => new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(n);
+const fmtDate = d => new Date(d+"T00:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+const today = () => new Date().toISOString().slice(0,10);
+
+// ── seed data ─────────────────────────────────────────────────────────────────
+const SEED = {
+  accounts:[
+    {id:"a1",name:"Checking",type:"checking",balance:3200,beginningBalance:3200,color:"#6366f1"},
+    {id:"a2",name:"Savings",type:"savings",balance:12500,beginningBalance:12500,color:"#10b981"},
+    {id:"a3",name:"Cash",type:"cash",balance:150,beginningBalance:150,color:"#f59e0b"},
+  ],
+  payees:["Employer / Payroll","Amazon","Whole Foods","Shell","Netflix","Landlord","Verizon","Chase","Venmo","Other"],
+  categories:{
+    income:["Salary","Freelance","Investment","Gift","Refund","Other Income"],
+    expense:["Housing","Groceries","Transport","Utilities","Entertainment","Dining","Healthcare","Shopping","Insurance","Savings Transfer","Other"],
+  },
+  transactions:[],
+};
+
+const load = () => { try { const s=localStorage.getItem("fintrack_v1"); return s?JSON.parse(s):null; } catch{return null;} };
+const save = s => { try{localStorage.setItem("fintrack_v1",JSON.stringify(s));}catch{} };
+
+// ── SVG icons ─────────────────────────────────────────────────────────────────
+const ICONS = {
+  plus:<><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
+  transfer:<><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></>,
+  trash:<><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></>,
+  chart:<><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></>,
+  list:<><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></>,
+  gear:<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>,
+  x:<><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
+  download:<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></>,
+};
+const Icon = ({name,size=16})=>(
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    {ICONS[name]}
+  </svg>
+);
+
+// ── shared styles ─────────────────────────────────────────────────────────────
+const INP={width:"100%",padding:"10px 14px",background:"#0f0f1e",border:"1px solid #2d2d4e",borderRadius:8,color:"#e8e8f8",fontSize:14,outline:"none",boxSizing:"border-box"};
+const CARD={background:"#13132a",border:"1px solid #1e1e3a",borderRadius:14,padding:20};
+
+const Field=({label,children})=>(
+  <div style={{marginBottom:16}}>
+    <label style={{display:"block",fontSize:11,fontWeight:600,letterSpacing:".08em",color:"#8888aa",textTransform:"uppercase",marginBottom:6}}>{label}</label>
+    {children}
+  </div>
+);
+
+const Btn=({onClick,variant="primary",children,style={}})=>{
+  const base={display:"inline-flex",alignItems:"center",gap:6,padding:"10px 20px",borderRadius:8,border:"none",cursor:"pointer",fontSize:14,fontWeight:600,fontFamily:"inherit"};
+  const vs={primary:{background:"linear-gradient(135deg,#6366f1,#8b5cf6)",color:"#fff"},ghost:{background:"transparent",color:"#8888aa",border:"1px solid #2d2d4e"},danger:{background:"#991b1b22",color:"#f87171",border:"1px solid #991b1b55"}};
+  return <button onClick={onClick} style={{...base,...vs[variant],...style}}>{children}</button>;
+};
+
+const Modal=({title,onClose,children})=>(
+  <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:1000,backdropFilter:"blur(4px)"}}>
+    <div style={{background:"#1a1a2e",border:"1px solid #2d2d4e",borderRadius:"20px 20px 0 0",padding:"28px 24px 40px",width:"100%",maxWidth:560,maxHeight:"90vh",overflowY:"auto"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
+        <h2 style={{margin:0,fontSize:17,fontFamily:"'Playfair Display',serif",color:"#e8e8f8"}}>{title}</h2>
+        <button onClick={onClose} style={{background:"#2d2d4e",border:"none",borderRadius:"50%",width:30,height:30,cursor:"pointer",color:"#8888aa",display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="x" size={15}/></button>
+      </div>
+      {children}
+    </div>
+  </div>
+);
+
+// ── CSV export ────────────────────────────────────────────────────────────────
+const exportCSV=(transactions,accounts)=>{
+  const amap=Object.fromEntries(accounts.map(a=>[a.id,a.name]));
+  const rows=[["Date","Type","Amount","Payee","Category","Account","Description","Note","Transfer To"]];
+  transactions.forEach(t=>{rows.push([t.date,t.type,t.amount,t.payee||"",t.category||"",amap[t.accountId]||"",t.description||"",t.note||"",t.transferToId?amap[t.transferToId]:""]);});
+  const csv=rows.map(r=>r.map(c=>`"${c}"`).join(",")).join("\n");
+  const blob=new Blob([csv],{type:"text/csv"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");a.href=url;a.download="transactions.csv";a.click();
+};
+
+// ── TxList ────────────────────────────────────────────────────────────────────
+function TxList({txs,accounts,onDelete}){
+  const amap=Object.fromEntries(accounts.map(a=>[a.id,a]));
+  if(!txs.length) return <div style={{padding:40,textAlign:"center",color:"#6666aa",fontSize:14}}>No transactions found</div>;
+  return(
+    <div>
+      {txs.map((t,i)=>{
+        const acc=amap[t.accountId];
+        const toAcc=t.transferToId?amap[t.transferToId]:null;
+        const isIncome=t.type==="income", isTransfer=t.type==="transfer";
+        return(
+          <div key={t.id} style={{display:"flex",alignItems:"center",padding:"14px 16px",borderBottom:i<txs.length-1?"1px solid #1e1e3a":"none",gap:12}}>
+            <div style={{width:36,height:36,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,
+              background:isTransfer?"#3b82f622":isIncome?"#10b98122":"#ef444422",
+              color:isTransfer?"#60a5fa":isIncome?"#10b981":"#ef4444",fontSize:16}}>
+              {isTransfer?"⇄":isIncome?"↑":"↓"}
+            </div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:600,fontSize:14,color:"#e8e8f8",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                {t.payee||(isTransfer?`${acc?.name} → ${toAcc?.name}`:"—")}
+              </div>
+              <div style={{fontSize:11,color:"#6666aa",display:"flex",gap:6,flexWrap:"wrap"}}>
+                <span>{fmtDate(t.date)}</span>
+                {t.category&&<><span>·</span><span>{t.category}</span></>}
+                {acc&&<><span>·</span><span style={{color:acc.color}}>{acc.name}</span></>}
+                {t.description&&<><span>·</span><span style={{color:"#a8a8c8"}}>{t.description}</span></>}
+                {t.note&&<><span>·</span><span style={{fontStyle:"italic"}}>{t.note}</span></>}
+              </div>
+            </div>
+            <div style={{fontFamily:"'Playfair Display',serif",fontSize:15,color:isTransfer?"#60a5fa":isIncome?"#10b981":"#f87171",flexShrink:0}}>
+              {isIncome?"+":isTransfer?"":"-"}{fmt(t.amount)}
+            </div>
+            <button onClick={()=>onDelete(t.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#4444668a",padding:4,flexShrink:0}}><Icon name="trash" size={13}/></button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+function App(){
+  const [state,setState]=useState(()=>load()||SEED);
+  const [view,setView]=useState("dashboard");
+  const [modal,setModal]=useState(null);
+  const [filter,setFilter]=useState({period:"month",account:"all",category:"all"});
+  const [form,setForm]=useState({});
+
+  useEffect(()=>{save(state);},[state]);
+  const setF=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const closeModal=()=>{setModal(null);setForm({});};
+
+  // ── filtered transactions ──────────────────────────────────────────────────
+  const filtered=useMemo(()=>{
+    let txs=[...state.transactions].sort((a,b)=>b.date.localeCompare(a.date));
+    const now=new Date();
+    if(filter.period!=="all"){
+      txs=txs.filter(t=>{
+        const d=new Date(t.date);
+        if(filter.period==="day") return d.toDateString()===now.toDateString();
+        if(filter.period==="week"){const s=new Date(now);s.setDate(now.getDate()-7);return d>=s;}
+        if(filter.period==="month") return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();
+        if(filter.period==="year") return d.getFullYear()===now.getFullYear();
+        return true;
+      });
+    }
+    if(filter.account!=="all") txs=txs.filter(t=>t.accountId===filter.account);
+    if(filter.category!=="all") txs=txs.filter(t=>t.category===filter.category);
+    return txs;
+  },[state.transactions,filter]);
+
+  const totals=useMemo(()=>{
+    let income=0,expenses=0;
+    filtered.forEach(t=>{if(t.type==="income")income+=t.amount;if(t.type==="expense")expenses+=t.amount;});
+    return{income,expenses,net:income-expenses};
+  },[filtered]);
+
+  const netWorth=state.accounts.reduce((s,a)=>s+a.balance,0);
+
+  // ── resolve / auto-create account ─────────────────────────────────────────
+  const resolveAccount=(s,idOrName)=>{
+    if(!idOrName) return{accounts:s.accounts,resolvedId:null};
+    if(s.accounts.find(a=>a.id===idOrName)) return{accounts:s.accounts,resolvedId:idOrName};
+    const byName=s.accounts.find(a=>a.name.toLowerCase()===idOrName.toLowerCase());
+    if(byName) return{accounts:s.accounts,resolvedId:byName.id};
+    const colors=["#6366f1","#10b981","#f59e0b","#ef4444","#3b82f6","#ec4899"];
+    const newAcc={id:uid(),name:idOrName,type:"checking",balance:0,beginningBalance:0,color:colors[s.accounts.length%colors.length]};
+    return{accounts:[...s.accounts,newAcc],resolvedId:newAcc.id};
+  };
+
+  // ── add transaction ────────────────────────────────────────────────────────
+  const addTransaction=()=>{
+    const{type,date,amount,payee,category,accountId,accountName,note,description,transferToId,transferToName}=form;
+    if(!amount||!date) return;
+    const amt=parseFloat(amount);
+    if(isNaN(amt)||amt<=0) return;
+    const payeeVal=(payee||"").trim();
+    const catVal=(category||"").trim();
+    const accountKey=accountName||accountId||"";
+    const toKey=transferToName||transferToId||"";
+    setState(s=>{
+      const payees=payeeVal&&!s.payees.includes(payeeVal)?[...s.payees,payeeVal]:s.payees;
+      let categories=s.categories;
+      if(catVal){
+        const allCats=[...s.categories.income,...s.categories.expense];
+        if(!allCats.includes(catVal)){
+          const bucket=type==="income"?"income":"expense";
+          categories={...s.categories,[bucket]:[...s.categories[bucket],catVal]};
+        }
+      }
+      const{accounts:accs1,resolvedId}=resolveAccount(s,accountKey);
+      let finalAccs=accs1,resolvedToId=null;
+      if(type==="transfer"){
+        const{accounts:accs2,resolvedId:rid2}=resolveAccount({...s,accounts:accs1},toKey);
+        finalAccs=accs2;resolvedToId=rid2;
+      }
+      if(!resolvedId) return s;
+      const tx={id:uid(),type,date,amount:amt,payee:payeeVal,category:catVal,accountId:resolvedId,note:note||"",description:description||"",transferToId:resolvedToId};
+      const accounts=finalAccs.map(a=>{
+        if(a.id===resolvedId) return{...a,balance:type==="income"?a.balance+amt:a.balance-amt};
+        if(type==="transfer"&&a.id===resolvedToId) return{...a,balance:a.balance+amt};
+        return a;
+      });
+      return{...s,payees,categories,accounts,transactions:[tx,...s.transactions]};
+    });
+    closeModal();
+  };
+
+  const deleteTransaction=id=>{
+    const tx=state.transactions.find(t=>t.id===id);
+    if(!tx) return;
+    setState(s=>{
+      const accounts=s.accounts.map(a=>{
+        if(a.id===tx.accountId) return{...a,balance:tx.type==="income"?a.balance-tx.amount:a.balance+tx.amount};
+        if(tx.type==="transfer"&&a.id===tx.transferToId) return{...a,balance:a.balance-tx.amount};
+        return a;
+      });
+      return{...s,accounts,transactions:s.transactions.filter(t=>t.id!==id)};
+    });
+  };
+
+  const addAccount=()=>{
+    const{name,type,balance}=form;
+    if(!name) return;
+    const colors=["#6366f1","#10b981","#f59e0b","#ef4444","#3b82f6","#ec4899"];
+    const color=colors[state.accounts.length%colors.length];
+    const bal=parseFloat(balance)||0;
+    setState(s=>({...s,accounts:[...s.accounts,{id:uid(),name,type:type||"checking",balance:bal,beginningBalance:bal,color}]}));
+    closeModal();
+  };
+
+  const addPayee=()=>{
+    const name=form.payeeName?.trim();
+    if(!name||state.payees.includes(name)) return;
+    setState(s=>({...s,payees:[...s.payees,name]}));
+    setF("payeeName","");
+  };
+
+  const addCategory=kind=>{
+    const name=form.catName?.trim();
+    if(!name||state.categories[kind].includes(name)) return;
+    setState(s=>({...s,categories:{...s.categories,[kind]:[...s.categories[kind],name]}}));
+    setF("catName","");
+  };
+
+  const allCategories=[...state.categories.income,...state.categories.expense];
+
+  // ── bottom nav style ───────────────────────────────────────────────────────
+  const navBtn=v=>({
+    flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4,padding:"10px 0",
+    background:"none",border:"none",cursor:"pointer",
+    color:view===v?"#a5b4fc":"#6666aa",fontSize:10,fontWeight:600,letterSpacing:".04em",
+  });
+
+  // ── render ─────────────────────────────────────────────────────────────────
+  return(
+    <div style={{display:"flex",flexDirection:"column",height:"100%",background:"#0b0b18"}}>
+
+      {/* ── HEADER ── */}
+      <div style={{background:"#13132a",borderBottom:"1px solid #1e1e3a",padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
+        <div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontSize:18,fontWeight:700,color:"#a5b4fc"}}>Ledger</div>
+          <div style={{fontSize:10,color:"#6666aa",letterSpacing:".06em"}}>PERSONAL FINANCE</div>
+        </div>
+        <div style={{textAlign:"right"}}>
+          <div style={{fontSize:10,color:"#6666aa",letterSpacing:".05em"}}>NET WORTH</div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontSize:18,color:netWorth>=0?"#10b981":"#ef4444"}}>{fmt(netWorth)}</div>
+        </div>
+      </div>
+
+      {/* ── MAIN CONTENT ── */}
+      <div style={{flex:1,overflowY:"auto",padding:"20px 16px"}}>
+
+        {/* ══ DASHBOARD ══ */}
+        {view==="dashboard"&&(<>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+            <div>
+              <h1 style={{fontFamily:"'Playfair Display',serif",fontSize:22,color:"#e8e8f8"}}>Overview</h1>
+              <p style={{fontSize:12,color:"#6666aa",marginTop:2}}>{new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}</p>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>{setForm({type:"transfer",date:today()});setModal("transfer");}}
+                style={{background:"#1e1e3a",border:"1px solid #2d2d4e",borderRadius:8,color:"#8888aa",padding:"8px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:5,fontSize:13,fontWeight:600}}>
+                <Icon name="transfer" size={13}/>Transfer
+              </button>
+              <button onClick={()=>{setForm({type:"expense",date:today()});setModal("add");}}
+                style={{background:"linear-gradient(135deg,#6366f1,#8b5cf6)",border:"none",borderRadius:8,color:"#fff",padding:"8px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:5,fontSize:13,fontWeight:600}}>
+                <Icon name="plus" size={13}/>Add
+              </button>
+            </div>
+          </div>
+
+          {/* Period pills */}
+          <div style={{display:"flex",gap:6,marginBottom:18,overflowX:"auto",paddingBottom:4}}>
+            {[["day","Today"],["week","Week"],["month","Month"],["year","Year"],["all","All"]].map(([p,l])=>(
+              <button key={p} onClick={()=>setFilter(f=>({...f,period:p}))}
+                style={{padding:"6px 14px",borderRadius:20,border:"1px solid",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,
+                  background:filter.period===p?"#6366f1":"transparent",
+                  borderColor:filter.period===p?"#6366f1":"#2d2d4e",
+                  color:filter.period===p?"#fff":"#6666aa"}}>
+                {l}
+              </button>
+            ))}
+          </div>
+
+          {/* Stat cards */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20}}>
+            {[{label:"Income",val:totals.income,color:"#10b981"},{label:"Expenses",val:totals.expenses,color:"#ef4444"},{label:"Net",val:totals.net,color:totals.net>=0?"#a5b4fc":"#f87171"}].map(s=>(
+              <div key={s.label} style={{...CARD,padding:14}}>
+                <div style={{fontSize:10,color:"#6666aa",fontWeight:600,letterSpacing:".06em",marginBottom:4}}>{s.label.toUpperCase()}</div>
+                <div style={{fontSize:16,fontFamily:"'Playfair Display',serif",color:s.color}}>{fmt(s.val)}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Accounts */}
+          <div style={{marginBottom:20}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <h2 style={{fontSize:15,fontWeight:600}}>Accounts</h2>
+              <button onClick={()=>{setForm({});setModal("account");}} style={{background:"none",border:"none",color:"#6366f1",fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+                <Icon name="plus" size={13}/>Add
+              </button>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {state.accounts.map(a=>(
+                <div key={a.id} style={{...CARD,padding:14,borderLeft:`3px solid ${a.color}`,display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}
+                  onClick={()=>setFilter(f=>({...f,account:f.account===a.id?"all":a.id}))}>
+                  <div>
+                    <div style={{fontSize:10,color:"#6666aa",textTransform:"uppercase",letterSpacing:".05em"}}>{a.type}</div>
+                    <div style={{fontWeight:600,fontSize:14,color:"#c8c8e8"}}>{a.name}</div>
+                  </div>
+                  <div style={{fontFamily:"'Playfair Display',serif",fontSize:18,color:a.color}}>{fmt(a.balance)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Recent */}
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <h2 style={{fontSize:15,fontWeight:600}}>Recent</h2>
+              <button onClick={()=>setView("transactions")} style={{background:"none",border:"none",color:"#6366f1",fontSize:13,cursor:"pointer"}}>View all →</button>
+            </div>
+            <div style={{...CARD,padding:0,overflow:"hidden"}}>
+              <TxList txs={filtered.slice(0,6)} accounts={state.accounts} onDelete={deleteTransaction}/>
+            </div>
+          </div>
+        </>)}
+
+        {/* ══ TRANSACTIONS ══ */}
+        {view==="transactions"&&(<>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+            <h1 style={{fontFamily:"'Playfair Display',serif",fontSize:22}}>Transactions</h1>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>exportCSV(state.transactions,state.accounts)}
+                style={{background:"#1e1e3a",border:"1px solid #2d2d4e",borderRadius:8,color:"#8888aa",padding:"8px 10px",cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontSize:12}}>
+                <Icon name="download" size={13}/>CSV
+              </button>
+              <button onClick={()=>{setForm({type:"expense",date:today()});setModal("add");}}
+                style={{background:"linear-gradient(135deg,#6366f1,#8b5cf6)",border:"none",borderRadius:8,color:"#fff",padding:"8px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontSize:13,fontWeight:600}}>
+                <Icon name="plus" size={13}/>Add
+              </button>
+            </div>
+          </div>
+
+          {/* Filters */}
+          <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+            <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2}}>
+              {[["day","Today"],["week","Week"],["month","Month"],["year","Year"],["all","All"]].map(([p,l])=>(
+                <button key={p} onClick={()=>setFilter(f=>({...f,period:p}))}
+                  style={{padding:"5px 12px",borderRadius:20,border:"1px solid",fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,
+                    background:filter.period===p?"#6366f1":"transparent",
+                    borderColor:filter.period===p?"#6366f1":"#2d2d4e",
+                    color:filter.period===p?"#fff":"#6666aa"}}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <select value={filter.account} onChange={e=>setFilter(f=>({...f,account:e.target.value}))} style={{...INP,flex:1,fontSize:12,padding:"8px 10px"}}>
+                <option value="all">All Accounts</option>
+                {state.accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+              <select value={filter.category} onChange={e=>setFilter(f=>({...f,category:e.target.value}))} style={{...INP,flex:1,fontSize:12,padding:"8px 10px"}}>
+                <option value="all">All Categories</option>
+                {allCategories.map(c=><option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div style={{...CARD,padding:0,overflow:"hidden"}}>
+            <TxList txs={filtered} accounts={state.accounts} onDelete={deleteTransaction}/>
+          </div>
+        </>)}
+
+        {/* ══ SETTINGS ══ */}
+        {view==="settings"&&(<>
+          <h1 style={{fontFamily:"'Playfair Display',serif",fontSize:22,marginBottom:20}}>Settings</h1>
+
+          {/* Accounts */}
+          <div style={{...CARD,marginBottom:16}}>
+            <h3 style={{fontSize:14,fontWeight:600,marginBottom:14}}>Accounts</h3>
+            {state.accounts.map(a=>(
+              <div key={a.id} style={{background:"#0f0f1e",borderRadius:8,marginBottom:8,overflow:"hidden"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{width:9,height:9,borderRadius:"50%",background:a.color}}/>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:600}}>{a.name}</div>
+                      <div style={{fontSize:11,color:"#6666aa",textTransform:"capitalize"}}>{a.type}</div>
+                    </div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontFamily:"'Playfair Display',serif",color:a.balance>=0?"#10b981":"#ef4444",fontSize:14}}>{fmt(a.balance)}</div>
+                    <div style={{fontSize:9,color:"#6666aa"}}>current</div>
+                  </div>
+                </div>
+                <div style={{borderTop:"1px solid #1e1e3a",padding:"8px 12px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                  <span style={{fontSize:11,color:"#6666aa"}}>Beginning balance</span>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    {form[`bb_edit_${a.id}`]?(
+                      <>
+                        <input type="number" value={form[`bb_${a.id}`]??a.beginningBalance??0}
+                          onChange={e=>setF(`bb_${a.id}`,e.target.value)}
+                          style={{...INP,width:100,padding:"4px 8px",fontSize:13}} autoFocus/>
+                        <button onClick={()=>{
+                          const newBB=parseFloat(form[`bb_${a.id}`]);
+                          if(isNaN(newBB)){setF(`bb_edit_${a.id}`,false);return;}
+                          const diff=newBB-(a.beginningBalance??0);
+                          setState(s=>({...s,accounts:s.accounts.map(acc=>acc.id===a.id?{...acc,beginningBalance:newBB,balance:acc.balance+diff}:acc)}));
+                          setF(`bb_edit_${a.id}`,false);
+                        }} style={{background:"#6366f1",border:"none",borderRadius:5,color:"#fff",padding:"4px 10px",fontSize:12,cursor:"pointer",fontWeight:600}}>Save</button>
+                        <button onClick={()=>setF(`bb_edit_${a.id}`,false)} style={{background:"none",border:"none",cursor:"pointer",color:"#6666aa",padding:2}}><Icon name="x" size={12}/></button>
+                      </>
+                    ):(
+                      <>
+                        <span style={{fontFamily:"'Playfair Display',serif",fontSize:13,color:"#a8a8c8"}}>{fmt(a.beginningBalance??0)}</span>
+                        <button onClick={()=>{setF(`bb_edit_${a.id}`,true);setF(`bb_${a.id}`,a.beginningBalance??0);}}
+                          style={{background:"#2d2d4e",border:"none",borderRadius:5,color:"#a5b4fc",padding:"3px 8px",fontSize:11,cursor:"pointer"}}>Edit</button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+            <Btn variant="ghost" style={{width:"100%",justifyContent:"center",marginTop:4}} onClick={()=>{setForm({});setModal("account");}}>
+              <Icon name="plus" size={13}/>Add Account
+            </Btn>
+          </div>
+
+          {/* Payees */}
+          <div style={{...CARD,marginBottom:16}}>
+            <h3 style={{fontSize:14,fontWeight:600,marginBottom:14}}>Payees / Vendors</h3>
+            <div style={{display:"flex",gap:8,marginBottom:10}}>
+              <input value={form.payeeName||""} onChange={e=>setF("payeeName",e.target.value)} placeholder="New payee..." style={{...INP,flex:1}} onKeyDown={e=>e.key==="Enter"&&addPayee()}/>
+              <button onClick={addPayee} style={{background:"linear-gradient(135deg,#6366f1,#8b5cf6)",border:"none",borderRadius:8,color:"#fff",padding:"0 14px",cursor:"pointer"}}><Icon name="plus" size={14}/></button>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:200,overflowY:"auto"}}>
+              {state.payees.map(p=>(
+                <div key={p} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:"#0f0f1e",borderRadius:6,fontSize:13}}>
+                  {p}
+                  <button onClick={()=>setState(s=>({...s,payees:s.payees.filter(x=>x!==p)}))} style={{background:"none",border:"none",cursor:"pointer",color:"#4444668a",padding:2}}><Icon name="x" size={12}/></button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Categories */}
+          <div style={{...CARD,marginBottom:16}}>
+            <h3 style={{fontSize:14,fontWeight:600,marginBottom:14}}>Categories</h3>
+            <div style={{display:"flex",gap:6,marginBottom:10}}>
+              <input value={form.catName||""} onChange={e=>setF("catName",e.target.value)} placeholder="New category..." style={{...INP,flex:1}} onKeyDown={e=>e.key==="Enter"&&addCategory("expense")}/>
+              <button onClick={()=>addCategory("income")} style={{background:"#1e1e3a",border:"1px solid #2d2d4e",borderRadius:8,color:"#8888aa",padding:"0 10px",cursor:"pointer",fontSize:11,fontWeight:600}}>+Inc</button>
+              <button onClick={()=>addCategory("expense")} style={{background:"linear-gradient(135deg,#6366f1,#8b5cf6)",border:"none",borderRadius:8,color:"#fff",padding:"0 10px",cursor:"pointer",fontSize:11,fontWeight:600}}>+Exp</button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              {["income","expense"].map(kind=>(
+                <div key={kind}>
+                  <div style={{fontSize:10,color:"#6666aa",letterSpacing:".06em",fontWeight:600,textTransform:"uppercase",marginBottom:6}}>{kind}</div>
+                  {state.categories[kind].map(c=>(
+                    <div key={c} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 8px",background:"#0f0f1e",borderRadius:5,fontSize:12,marginBottom:3}}>
+                      <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c}</span>
+                      <button onClick={()=>setState(s=>({...s,categories:{...s.categories,[kind]:s.categories[kind].filter(x=>x!==c)}}))} style={{background:"none",border:"none",cursor:"pointer",color:"#4444668a",padding:1,flexShrink:0}}><Icon name="x" size={10}/></button>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Data */}
+          <div style={CARD}>
+            <h3 style={{fontSize:14,fontWeight:600,color:"#f87171",marginBottom:14}}>Data</h3>
+            <Btn variant="danger" onClick={()=>{if(confirm("Clear all transactions and reset balances?")){{setState(SEED);save(SEED);}}}}>
+              Clear All Transactions
+            </Btn>
+          </div>
+        </>)}
+      </div>
+
+      {/* ── BOTTOM NAV ── */}
+      <div style={{background:"#13132a",borderTop:"1px solid #1e1e3a",display:"flex",flexShrink:0}}>
+        {[["dashboard","chart","Overview"],["transactions","list","Transactions"],["settings","gear","Settings"]].map(([v,ic,label])=>(
+          <button key={v} onClick={()=>setView(v)} style={navBtn(v)}>
+            <Icon name={ic} size={20}/>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ══ ADD TRANSACTION MODAL ══ */}
+      {modal==="add"&&(
+        <Modal title={form.type==="income"?"Add Income":"Add Expense"} onClose={closeModal}>
+          <div style={{display:"flex",gap:6,marginBottom:18}}>
+            {["expense","income"].map(t=>(
+              <button key={t} onClick={()=>setF("type",t)} style={{flex:1,padding:"9px",borderRadius:8,border:"1px solid",cursor:"pointer",fontSize:13,fontWeight:600,
+                background:form.type===t?(t==="income"?"#10b98122":"#ef444422"):"#0f0f1e",
+                borderColor:form.type===t?(t==="income"?"#10b981":"#ef4444"):"#2d2d4e",
+                color:form.type===t?(t==="income"?"#10b981":"#ef4444"):"#6666aa",textTransform:"capitalize"}}>
+                {t}
+              </button>
+            ))}
+          </div>
+          <Field label="Date"><input type="date" value={form.date||""} onChange={e=>setF("date",e.target.value)} style={INP}/></Field>
+          <Field label="Amount"><input type="number" inputMode="decimal" placeholder="0.00" value={form.amount||""} onChange={e=>setF("amount",e.target.value)} style={INP}/></Field>
+          <Field label="Payee / Source">
+            <input list="payee-list" placeholder="Type or pick a payee" value={form.payee||""} onChange={e=>setF("payee",e.target.value)} style={INP}/>
+            <datalist id="payee-list">{state.payees.map(p=><option key={p} value={p}/>)}</datalist>
+          </Field>
+          <Field label="Category">
+            <input list="cat-list" placeholder="Type or pick a category" value={form.category||""} onChange={e=>setF("category",e.target.value)} style={INP}/>
+            <datalist id="cat-list">{allCategories.map(c=><option key={c} value={c}/>)}</datalist>
+            {form.category&&!allCategories.includes(form.category.trim())&&form.category.trim()&&(
+              <div style={{fontSize:11,color:"#f59e0b",marginTop:4}}>✦ "{form.category.trim()}" will be added as a new {form.type==="income"?"income":"expense"} category</div>
+            )}
+          </Field>
+          <Field label="Account">
+            <input list="acc-list" placeholder="Type or pick an account" value={form.accountName||""} onChange={e=>setF("accountName",e.target.value)} style={INP}/>
+            <datalist id="acc-list">{state.accounts.map(a=><option key={a.id} value={a.name}/>)}</datalist>
+            {form.accountName&&!state.accounts.find(a=>a.name.toLowerCase()===form.accountName.toLowerCase())&&(
+              <div style={{fontSize:11,color:"#f59e0b",marginTop:4}}>✦ "{form.accountName}" will be created as a new account</div>
+            )}
+          </Field>
+          <Field label="Description (optional)">
+            <input placeholder="e.g. Weekly grocery run" value={form.description||""} onChange={e=>setF("description",e.target.value)} style={INP}/>
+          </Field>
+          <Field label="Note (optional)">
+            <input placeholder="e.g. Receipt #4821" value={form.note||""} onChange={e=>setF("note",e.target.value)} style={INP}/>
+          </Field>
+          <div style={{display:"flex",gap:8,marginTop:4}}>
+            <Btn variant="ghost" onClick={closeModal}>Cancel</Btn>
+            <Btn onClick={addTransaction} style={{flex:1,justifyContent:"center"}}>Save {form.type==="income"?"Income":"Expense"}</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* ══ TRANSFER MODAL ══ */}
+      {modal==="transfer"&&(
+        <Modal title="Transfer Funds" onClose={closeModal}>
+          <Field label="Date"><input type="date" value={form.date||""} onChange={e=>setF("date",e.target.value)} style={INP}/></Field>
+          <Field label="Amount"><input type="number" inputMode="decimal" placeholder="0.00" value={form.amount||""} onChange={e=>setF("amount",e.target.value)} style={INP}/></Field>
+          <Field label="From Account">
+            <input list="acc-from" placeholder="Type or pick an account" value={form.accountName||""} onChange={e=>setF("accountName",e.target.value)} style={INP}/>
+            <datalist id="acc-from">{state.accounts.map(a=><option key={a.id} value={a.name}/>)}</datalist>
+          </Field>
+          <Field label="To Account">
+            <input list="acc-to" placeholder="Type or pick an account" value={form.transferToName||""} onChange={e=>setF("transferToName",e.target.value)} style={INP}/>
+            <datalist id="acc-to">{state.accounts.filter(a=>a.name.toLowerCase()!==(form.accountName||"").toLowerCase()).map(a=><option key={a.id} value={a.name}/>)}</datalist>
+          </Field>
+          <Field label="Description (optional)">
+            <input placeholder="e.g. Monthly savings" value={form.description||""} onChange={e=>setF("description",e.target.value)} style={INP}/>
+          </Field>
+          <Field label="Note (optional)">
+            <input placeholder="e.g. Auto-transfer" value={form.note||""} onChange={e=>setF("note",e.target.value)} style={INP}/>
+          </Field>
+          <div style={{display:"flex",gap:8,marginTop:4}}>
+            <Btn variant="ghost" onClick={closeModal}>Cancel</Btn>
+            <Btn onClick={addTransaction} style={{flex:1,justifyContent:"center"}}>Transfer</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* ══ ADD ACCOUNT MODAL ══ */}
+      {modal==="account"&&(
+        <Modal title="Add Account" onClose={closeModal}>
+          <Field label="Account Name"><input placeholder="e.g. Chase Checking" value={form.name||""} onChange={e=>setF("name",e.target.value)} style={INP}/></Field>
+          <Field label="Account Type">
+            <select value={form.type||"checking"} onChange={e=>setF("type",e.target.value)} style={INP}>
+              {["checking","savings","cash","credit","investment","other"].map(t=><option key={t} value={t}>{t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
+            </select>
+          </Field>
+          <Field label="Starting Balance"><input type="number" inputMode="decimal" placeholder="0.00" value={form.balance||""} onChange={e=>setF("balance",e.target.value)} style={INP}/></Field>
+          <div style={{display:"flex",gap:8,marginTop:4}}>
+            <Btn variant="ghost" onClick={closeModal}>Cancel</Btn>
+            <Btn onClick={addAccount} style={{flex:1,justifyContent:"center"}}>Add Account</Btn>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
